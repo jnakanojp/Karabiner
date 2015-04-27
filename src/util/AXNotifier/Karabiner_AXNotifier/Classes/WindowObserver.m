@@ -4,7 +4,6 @@
 enum {
   WINDOWID_LAUNCHPAD,
   WINDOWID_SPOTLIGHT,
-    WINDOWID_QUICKSILVER,
   WINDOWID__END__,
 };
 
@@ -17,6 +16,9 @@ enum {
   // (We need to manage long[] in order to put non-object-pointer into CFArray.)
   long rawWindowIDs_[WINDOWID__END__];
   CFArrayRef windowIDs_;
+    
+  CFArrayRef quicksilverWindowIDs_;
+
 }
 @end
 
@@ -169,8 +171,8 @@ enum {
 - (BOOL)isQuicksilver:(NSString*)windowOwnerName
            windowName:(NSString*)windowName
           windowLayer:(NSInteger)windowLayer {
-    if ([windowOwnerName isEqualToString:@"Quicksilver"]) {
-        
+    if ([windowOwnerName isEqualToString:@"Quicksilver"] &&
+        ![windowName isEqualToString:@"Preferences"]) {
         return YES;
     }
     
@@ -184,8 +186,9 @@ enum {
       // update rawWindowIDs_
 
       for (size_t i = 0; i < WINDOWID__END__; ++i) {
-        rawWindowIDs_[i] = 0;
+          rawWindowIDs_[i] = 0;
       }
+        NSMutableArray *quicksilverWindowIDs = [NSMutableArray new];
 
       NSArray* windows = (__bridge_transfer NSArray*)(CGWindowListCopyWindowInfo(kCGWindowListOptionAll,
                                                                                  kCGNullWindowID));
@@ -209,7 +212,7 @@ enum {
         if ([self isQuicksilver:windowOwnerName
                    windowName:windowName
                   windowLayer:windowLayer]) {
-          rawWindowIDs_[WINDOWID_QUICKSILVER] = [window[(__bridge NSString*)(kCGWindowNumber)] unsignedIntValue];
+            [quicksilverWindowIDs addObject:window[(__bridge NSString*)(kCGWindowNumber)]];
         }
       }
 
@@ -221,6 +224,19 @@ enum {
         windowIDs_ = NULL;
       }
       windowIDs_ = CFArrayCreate(NULL, (const void**)(rawWindowIDs_), WINDOWID__END__, NULL);
+
+        if (quicksilverWindowIDs_) {
+            CFRelease(quicksilverWindowIDs_);
+            quicksilverWindowIDs_ = NULL;
+        }
+        if (quicksilverWindowIDs.count) {
+            long *quicksilverWindowIDsBuf = malloc(quicksilverWindowIDs.count * sizeof(long));
+            for (int i = 0; i < (int)quicksilverWindowIDs.count; i++) {
+                quicksilverWindowIDsBuf[i] = [quicksilverWindowIDs[i] unsignedIntValue];
+            }
+            quicksilverWindowIDs_ = CFArrayCreate(NULL, (const void**)(quicksilverWindowIDsBuf), (int)quicksilverWindowIDs.count, NULL);
+            free(quicksilverWindowIDsBuf);
+        }
     }
   });
 }
@@ -243,9 +259,6 @@ enum {
           if (rawWindowIDs_[WINDOWID_SPOTLIGHT] == windowNumber) {
             key = @"Spotlight";
           }
-          if (rawWindowIDs_[WINDOWID_QUICKSILVER] == windowNumber) {
-            key = @"Quicksilver";
-          }
 
           if (key) {
             if (isOnScreen) {
@@ -261,6 +274,26 @@ enum {
           }
         }
       }
+        if (quicksilverWindowIDs_) {
+            NSArray* windows = (__bridge_transfer NSArray*)(CGWindowListCreateDescriptionFromArray(quicksilverWindowIDs_));
+            for (NSDictionary* window in windows) {
+                pid_t windowOwnerPID = [window[(__bridge NSString*)(kCGWindowOwnerPID)] intValue];
+                BOOL isOnScreen = [window[(__bridge NSString*)(kCGWindowIsOnscreen)] boolValue];
+                NSString *key = @"Quicksilver";
+                if (isOnScreen) {
+                    if (! shown_[key]) {
+                        NSString* bundleIdentifier = [[NSRunningApplication runningApplicationWithProcessIdentifier:windowOwnerPID] bundleIdentifier];
+                        if (bundleIdentifier) {
+                            shown_[key] = bundleIdentifier;
+                            [self postNotification:key bundleIdentifier:shown_[key] visibility:YES];
+                        }
+                    }
+                    return;
+                }
+
+            }
+            
+        }
 
       // ----------------------------------------
       // There is no target window in screen.
