@@ -172,7 +172,9 @@ enum {
            windowName:(NSString*)windowName
           windowLayer:(NSInteger)windowLayer {
     if ([windowOwnerName isEqualToString:@"Quicksilver"] &&
-        ![windowName isEqualToString:@"Preferences"]) {
+         ![windowName isEqualToString:@"Guide"] &&![windowName isEqualToString:@"Preferences"]
+        && ![windowName isEqualToString:@"Triggers"] &&![windowName isEqualToString:@"Catalog"]
+        &&![windowName isEqualToString:@"Plugins"]) {
         return YES;
     }
     
@@ -278,17 +280,23 @@ enum {
             NSArray* windows = (__bridge_transfer NSArray*)(CGWindowListCreateDescriptionFromArray(quicksilverWindowIDs_));
             for (NSDictionary* window in windows) {
                 pid_t windowOwnerPID = [window[(__bridge NSString*)(kCGWindowOwnerPID)] intValue];
-                BOOL isOnScreen = [window[(__bridge NSString*)(kCGWindowIsOnscreen)] boolValue];
-                NSString *key = @"Quicksilver";
-                if (isOnScreen) {
-                    if (! shown_[key]) {
-                        NSString* bundleIdentifier = [[NSRunningApplication runningApplicationWithProcessIdentifier:windowOwnerPID] bundleIdentifier];
-                        if (bundleIdentifier) {
-                            shown_[key] = bundleIdentifier;
-                            [self postNotification:key bundleIdentifier:shown_[key] visibility:YES];
+                NSString* windowOwnerName = window[(__bridge NSString*)(kCGWindowOwnerName)];
+                NSString* windowName = window[(__bridge NSString*)(kCGWindowName)];
+                NSInteger windowLayer = [window[(__bridge NSString*)(kCGWindowLayer)] integerValue];
+                if ([self isQuicksilver:windowOwnerName windowName:windowName windowLayer:windowLayer]) {
+                    BOOL isOnScreen = [window[(__bridge NSString*)(kCGWindowIsOnscreen)] boolValue];
+                    NSString *key = @"Quicksilver";
+                    if (isOnScreen) {
+                        NSLog(@"%@, %@, %ld", windowOwnerName, windowName, windowLayer);
+                        if (! shown_[key]) {
+                            NSString* bundleIdentifier = [[NSRunningApplication runningApplicationWithProcessIdentifier:windowOwnerPID] bundleIdentifier];
+                            if (bundleIdentifier) {
+                                shown_[key] = bundleIdentifier;
+                                [self postNotification:key bundleIdentifier:shown_[key] visibility:YES];
+                            }
                         }
+                        return;
                     }
-                    return;
                 }
 
             }
